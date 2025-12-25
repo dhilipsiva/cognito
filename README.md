@@ -14,7 +14,7 @@ Current Large Language Models are "Stochastic Parrots"—high knowledge density,
 * **Reasoning Dense:** It understands causality, logic, and decomposition.
 * **Tool Native:** If it needs facts, it calls a tool. It does not hallucinate.
 
-This is a **System 2** thinker implemented without a single line of Python.
+This is a **System 2** thinker implemented Completely in Rust.
 
 ## 2. Architecture
 
@@ -70,3 +70,14 @@ cargo run --release --bin train -- --config config/reasoning_1b.toml
 
 # Run inference (CLI mode)
 cargo run --release --bin interact
+```
+
+## 6. Dataset Strategy
+
+We do not train on CommonCrawl. We train on:
+
+* Synthetic Logic: Generated chain-of-thought traces.
+* Code/Math: OpenWebMath, GSM8K (for structural logic).
+* Tool Use Traces: Synthetic conversations demonstrating <call> / <result> syntax.
+
+Built with Rust.
