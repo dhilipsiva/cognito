@@ -52,7 +52,7 @@ impl<B: Backend> ReasoningAgent<B> {
             println!("Assistant:");
 
             // Generate with Temperature 0.7 (Creative but focused)
-            let response = self.generate(&prompt, 50, 0.7);
+            let response = self.generate(&prompt, 50, 0.8);
 
             history.push_str(input.trim());
             history.push_str(&response);
@@ -63,7 +63,7 @@ impl<B: Backend> ReasoningAgent<B> {
         let encoding = self.tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding.get_ids().to_vec();
 
-        let penalty = 1.2; // Aggressive penalty (1.1 - 1.5 is standard)
+        let penalty = 1.05; // Aggressive penalty (1.1 - 1.5 is standard)
 
         for _ in 0..max_tokens {
             let seq_len = tokens.len();
@@ -139,8 +139,15 @@ impl<B: Backend> ReasoningAgent<B> {
             //     break;
             // }
 
+            // if next_token_scalar == 100257 {
+            //    break;
+            // }
             if next_token_scalar == 100257 {
-                break;
+                // Optional: Only allow break if we have generated at least 5 tokens
+                if tokens.len() > encoding.get_ids().len() + 5 {
+                    break;
+                }
+                // Else, ignore EOS and keep going (forces it to babble)
             }
         }
         println!();
