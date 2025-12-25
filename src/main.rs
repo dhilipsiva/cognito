@@ -1,35 +1,35 @@
-use burn::tensor::{Tensor, backend::Backend};
+mod config;
+mod data;
+mod model; // <--- Add this
+
+use burn::module::Module;
+use burn::tensor::backend::Backend;
 use burn_cuda::{Cuda, CudaDevice};
+use config::ModelConfig;
+use model::ReasoningModel;
 
 fn main() {
-    println!("--- Cognito: System 2 Reasoning Kernel (Windows Native) ---");
+    println!("--- Cognito: System 2 Reasoning Kernel ---");
 
-    // 1. Initialize the Device
-    // Device 0 is your primary GPU (RTX 5090)
+    // 1. Hardware
     let device = CudaDevice::new(0);
 
-    println!("> Backend Initialized: CUDA");
-    println!("> Target Device: {:?}", device);
+    // 2. Model
+    let config = ModelConfig::new();
+    println!("> Configuration Loaded: 1.2B Parameters (approx)");
+    init_model::<Cuda>(&config, &device);
 
-    // 2. Run the Kernel
-    run_inference_test::<Cuda>(device);
+    // 3. Data Check
+    println!("\n> Initializing Tokenizer...");
+    let tokenizer = data::load_tokenizer();
+    let text = "Logic is the beginning of wisdom.";
+    let encoding = tokenizer.encode(text, true).unwrap();
+    println!("> Tokenizer Check: '{}' -> {:?}", text, encoding.get_ids());
 }
 
-fn run_inference_test<B: Backend>(device: B::Device) {
-    println!("> Allocating tensors on VRAM...");
-
-    // Create a 2x3 tensor
-    let tensor_1: Tensor<B, 2> = Tensor::from_floats([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], &device);
-
-    let tensor_2: Tensor<B, 2> = Tensor::from_floats([[0.5, 0.5, 0.5], [1.0, 2.0, 1.0]], &device);
-
-    println!("> Tensor 1 Shape: {:?}", tensor_1.shape());
-
-    // Perform an operation (Addition) on the GPU
-    let result = tensor_1 + tensor_2;
-
-    println!("> Result (Tensor 1 + Tensor 2):");
-    println!("{}", result);
-
-    println!("\n> SUCCESS: RTX 5090 is online and accessible via Rust.");
+fn init_model<B: Backend>(config: &ModelConfig, device: &B::Device) {
+    let model = ReasoningModel::<B>::new(config, device);
+    let num_params = model.num_params();
+    println!("> Model Successfully Created!");
+    println!("> Total Parameters: {:.2} Billion", num_params as f64 / 1e9);
 }

@@ -11,5 +11,5 @@ burn = { git = "https://github.com/tracel-ai/burn", features = ["train", "wgpu"]
 burn-cuda = { git = "https://github.com/tracel-ai/burn" }
 serde_json = "1.0.147"
 clap = { version = "4.5.53", features = ["derive"] }
-tokenizers = { version = "0.22.2", features = ["onig"] }
+tokenizers = { version = "0.22.2", features = ["onig", "http"] }
 serde = { version = "1.0.228", features = ["derive"] }
