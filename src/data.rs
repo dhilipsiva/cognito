@@ -1,5 +1,5 @@
 use burn::{data::dataloader::batcher::Batcher, prelude::*};
-use tokenizers::Tokenizer;
+use tokenizers::{AddedToken, Tokenizer};
 
 #[derive(Clone, Debug)]
 pub struct ReasoningBatcher {
@@ -22,49 +22,32 @@ pub struct ReasoningBatch<B: Backend> {
     pub targets: Tensor<B, 2, Int>,
 }
 
-// Implement Batcher with the correct 3-argument signature
 impl<B: Backend> Batcher<B, String, ReasoningBatch<B>> for ReasoningBatcher {
     fn batch(&self, items: Vec<String>, device: &B::Device) -> ReasoningBatch<B> {
         let encodings = self
             .tokenizer
             .encode_batch(items, true)
-            .expect("Tokenization failed");
+            .expect("Encoding failed");
 
+        // Simplified Logic: Just take the first valid item
         let mut all_inputs = Vec::new();
         let mut all_targets = Vec::new();
-        let mut valid_batch = false;
 
         for encoding in encodings {
             let ids = encoding.get_ids();
-            let len = ids.len();
-
-            if len < 2 {
+            if ids.len() < 2 {
                 continue;
             }
-            valid_batch = true;
+            let len = ids.len().min(self.max_seq_len + 1);
 
-            // Truncate
-            let take_len = len.min(self.max_seq_len + 1);
-
-            // Shift for autoregressive training
-            let input_slice = &ids[0..take_len - 1];
-            let target_slice = &ids[1..take_len];
-
-            all_inputs.extend(input_slice.iter().map(|&i| i as i32));
-            all_targets.extend(target_slice.iter().map(|&i| i as i32));
-
-            // For smoke test, strictly process one item to guarantee shapes match
+            all_inputs.extend(ids[0..len - 1].iter().map(|&i| i as i32));
+            all_targets.extend(ids[1..len].iter().map(|&i| i as i32));
             break;
-        }
-
-        if !valid_batch {
-            panic!("Batch contained empty or too short strings!");
         }
 
         let seq_len = all_inputs.len();
 
-        // Explicitly create 1D tensors first (Tensor::<B, 1, Int>), then reshape.
-        // This satisfies the compiler's need for strict types.
+        // FIX: Added '&' before device
         let inputs =
             Tensor::<B, 1, Int>::from_ints(all_inputs.as_slice(), device).reshape([1, seq_len]);
 
@@ -77,6 +60,19 @@ impl<B: Backend> Batcher<B, String, ReasoningBatch<B>> for ReasoningBatcher {
 
 pub fn load_tokenizer() -> Tokenizer {
     println!("> Downloading Tokenizer (gpt-4)...");
-    Tokenizer::from_pretrained("Xenova/gpt-4", None)
-        .expect("Failed to load tokenizer. Check internet connection.")
+    let mut tokenizer =
+        Tokenizer::from_pretrained("Xenova/gpt-4", None).expect("Failed to load tokenizer.");
+
+    let special_tokens = vec![
+        AddedToken::from("<think>", true),
+        AddedToken::from("</think>", true),
+        AddedToken::from("<call>", true),
+        AddedToken::from("</call>", true),
+        AddedToken::from("<result>", true),
+        AddedToken::from("</result>", true),
+    ];
+
+    tokenizer.add_special_tokens(&special_tokens);
+    println!("> Special Tokens Injected.");
+    tokenizer
 }
