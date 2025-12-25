@@ -1126,6 +1126,7 @@ dependencies = [
  "anyhow",
  "burn",
  "burn-cuda",
+ "burn-train",
  "clap",
  "serde",
  "serde_json",
