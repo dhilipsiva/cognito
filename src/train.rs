@@ -15,13 +15,13 @@ use burn::{
 
 #[derive(Config, Debug)]
 pub struct TrainingConfig {
-    #[config(default = 2)] // Reduced from 4
+    #[config(default = 2)]
     pub batch_size: usize,
 
     #[config(default = 1)]
     pub num_epochs: usize,
 
-    #[config(default = 1e-4)]
+    #[config(default = 1e-5)]
     pub learning_rate: f64,
 }
 
@@ -61,6 +61,7 @@ pub fn train<B: AutodiffBackend>(device: B::Device) {
 
             // FIX: Capture device BEFORE reshaping consumes 'logits'
             let device = logits.device();
+            let pad_id = tokenizer.token_to_id("<pad>").unwrap_or(100255) as i32;
 
             // B. Loss Calculation
             let [batch_size, seq_len, vocab_size] = logits.dims();
@@ -68,7 +69,7 @@ pub fn train<B: AutodiffBackend>(device: B::Device) {
             let logits_flatten = logits.reshape([batch_size * seq_len, vocab_size]);
 
             let loss = CrossEntropyLossConfig::new()
-                .with_pad_tokens(Some(vec![0]))
+                .with_pad_tokens(Some(vec![pad_id as usize]))
                 .init(&device) // FIX: Use the captured device
                 .forward(logits_flatten, targets_flatten);
 
@@ -81,7 +82,7 @@ pub fn train<B: AutodiffBackend>(device: B::Device) {
                 );
             }
 
-            if iteration >= 10_000 {
+            if iteration >= 1500 {
                 println!("> Reached 10,000 steps. Stopping early to save model.");
                 break; // Breaks the inner loop
             }
