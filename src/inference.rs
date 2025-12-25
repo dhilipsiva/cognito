@@ -1,10 +1,11 @@
-use crate::model::ReasoningModel;
+use crate::{config::ModelConfig, data, model::ReasoningModel};
 use burn::{
-    prelude::*,
+    module::Module,
+    record::{CompactRecorder, Recorder},
     tensor::{Int, Tensor, backend::Backend},
 };
 use std::io::{self, Write};
-use tokenizers::Tokenizer; // Added for smooth text streaming
+use tokenizers::Tokenizer;
 
 pub struct ReasoningAgent<B: Backend> {
     model: ReasoningModel<B>,
@@ -13,7 +14,21 @@ pub struct ReasoningAgent<B: Backend> {
 }
 
 impl<B: Backend> ReasoningAgent<B> {
-    pub fn new(model: ReasoningModel<B>, tokenizer: Tokenizer, device: B::Device) -> Self {
+    // Constructor 1: Load Trained Weights
+    pub fn load(device: B::Device) -> Self {
+        let config = ModelConfig::new();
+        println!("> Loading Model Architecture...");
+        let model_skeleton = ReasoningModel::new(&config, &device);
+
+        println!("> Loading Trained Weights (cognito_model)...");
+        // CompactRecorder automatically handles the file extension (.mpk or .bin)
+        let record = CompactRecorder::new()
+            .load("cognito_model".into(), &device)
+            .expect("Could not find 'cognito_model' artifact. Did you run training?");
+
+        let model = model_skeleton.load_record(record);
+        let tokenizer = data::load_tokenizer();
+
         Self {
             model,
             tokenizer,
@@ -21,58 +36,81 @@ impl<B: Backend> ReasoningAgent<B> {
         }
     }
 
-    pub fn generate(&self, prompt: &str, max_tokens: usize) -> String {
-        // 1. Encode Prompt
+    pub fn chat(&self) {
+        println!("\n--- Cognito Inference Engine (Type 'quit' to exit) ---");
+        let mut history = String::new();
+
+        loop {
+            print!("\nUser: ");
+            io::stdout().flush().unwrap();
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input).unwrap();
+            let input = input.trim();
+
+            if input == "quit" {
+                break;
+            }
+
+            // Format input for the model
+            // TinyStories is prose, so we just feed the prompt directly.
+            // For a chat model, we'd use "<|user|>{input}<|assistant|>"
+            let prompt = format!("{}{}", history, input);
+
+            println!("Assistant (Generating):");
+            let response = self.generate(&prompt, 50); // Gen 50 tokens
+
+            // Simple history management (sliding window)
+            history.push_str(&input);
+            history.push_str(&response);
+        }
+    }
+
+    fn generate(&self, prompt: &str, max_tokens: usize) -> String {
+        // 1. Encode
         let encoding = self.tokenizer.encode(prompt, true).unwrap();
         let mut tokens = encoding.get_ids().to_vec();
-
-        println!("\n--- Generating (Autoregressive) ---");
-        print!("{}", prompt);
-        io::stdout().flush().unwrap(); // Force print immediately
 
         // 2. Generation Loop
         for _ in 0..max_tokens {
             let seq_len = tokens.len();
 
-            // Create input tensor [1, Seq_Len]
+            // Context Window Safety Check
+            if seq_len >= 1024 {
+                break;
+            }
+
             let input = Tensor::<B, 1, Int>::from_ints(tokens.as_slice(), &self.device)
                 .reshape([1, seq_len]);
 
-            // Forward Pass
             let logits = self.model.forward(input);
 
-            // extract dimensions safely
-            let [batch_size, _, vocab_size] = logits.dims();
-
-            // FIX: Use reshape([1, vocab]) instead of squeeze.
-            // This preserves the batch dimension even if it is 1.
+            // Greedy Sampling (Top-1)
+            let [batch, _, vocab] = logits.dims();
             let next_token_logits = logits
                 .slice([0..1, seq_len - 1..seq_len])
-                .reshape([batch_size, vocab_size]);
+                .reshape([batch, vocab]);
 
-            // 3. Greedy Sampling
-            let next_token_tensor = next_token_logits.argmax(1); // [Batch, 1] (indices)
-
-            // Extract the scalar ID
+            let next_token_tensor = next_token_logits.argmax(1);
             let next_token_scalar =
                 next_token_tensor.into_data().as_slice::<i32>().unwrap()[0] as u32;
 
-            // 4. Decode & Print
+            // Stream to console
             let decode_chunk = self.tokenizer.decode(&[next_token_scalar], true).unwrap();
             print!("{}", decode_chunk);
             io::stdout().flush().unwrap();
 
-            // 5. Append & Continue
             tokens.push(next_token_scalar);
 
-            // GPT-4 End of Text token is typically 100257 (or <|endoftext|>).
-            // We'll break on a few common stop tokens just in case.
-            if next_token_scalar == 50256 || next_token_scalar == 100257 {
+            // Stop tokens (End of Text or Newline often implies end of sentence in prose)
+            if next_token_scalar == 50256 || decode_chunk.contains("\n") {
                 break;
             }
         }
-        println!("\n-----------------------------------");
+        println!(); // Newline at end
 
-        self.tokenizer.decode(&tokens, true).unwrap()
+        // Return just the new part
+        let full_text = self.tokenizer.decode(&tokens, true).unwrap();
+        full_text.replace(prompt, "")
     }
 }

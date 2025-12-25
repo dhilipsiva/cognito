@@ -7,6 +7,7 @@ mod train; // <--- Add this
 use burn::backend::Autodiff; // Wrapper for training
 use burn_cuda::{Cuda, CudaDevice};
 use clap::{Parser, Subcommand};
+use inference::ReasoningAgent;
 
 // CLI Definition
 #[derive(Parser)]
@@ -49,9 +50,10 @@ fn run() {
         }
         Commands::Interact => {
             println!("--- Starting Inference Engine ---");
-            // ... (Your existing inference logic here)
-            // Ideally move the inference code into a function inside inference.rs
-            // e.g., inference::run_chat(device);
+            // Load the saved model onto the GPU
+            let agent = ReasoningAgent::<Autodiff<Cuda>>::load(device);
+            // Enter the loop
+            agent.chat();
         }
     }
 }
